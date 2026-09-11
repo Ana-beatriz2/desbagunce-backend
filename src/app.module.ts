@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import databaseConfig from './database/database.config';
+import { FirebaseModule } from './integrations/firebase/firebase.module';
+import { UserModule } from './modules/user/user.module';
 
 @Module({
   imports: [
@@ -15,6 +17,8 @@ import databaseConfig from './database/database.config';
         ...configService.get('databaseConfig'),
       }),
     }),
+    FirebaseModule,
+    UserModule,
   ],
 })
 export class AppModule {}
