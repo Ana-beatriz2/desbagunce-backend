@@ -8,10 +8,8 @@ import { CreateAdminUserDto, CreateAdminUserResponseDto } from './user.dto';
 
 const POSTGRES_UNIQUE_VIOLATION = '23505';
 
-// Deliberately vague: naming "email" specifically here would let an attacker
-// enumerate which addresses already have an account (CWE-203).
 const SIGNUP_CONFLICT_MESSAGE =
-  'Não foi possível concluir o cadastro com os dados informados.';
+  'Unable to complete signup with the provided information.';
 
 @Injectable()
 export class UserService {

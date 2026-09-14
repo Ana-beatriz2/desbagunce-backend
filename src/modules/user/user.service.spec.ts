@@ -8,8 +8,6 @@ import { House } from '../house/house.entity';
 import { User } from './user.entity';
 import { CreateAdminUserDto } from './user.dto';
 
-// firebase-admin/auth pulls in the ESM-only `jose` package transitively,
-// which Jest cannot parse — stub the module so it's never actually loaded.
 jest.mock('../../integrations/firebase/firebase.service', () => ({
   FirebaseService: jest.fn(),
 }));
