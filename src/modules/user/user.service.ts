@@ -1,8 +1,9 @@
 import { ConflictException, Injectable, Logger } from '@nestjs/common';
-import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { FirebaseService } from '../../integrations/firebase/firebase.service';
-import { House } from '../house/house.entity';
+import { HouseService } from '../house/house.service';
+import { HouseResponseDto } from '../house/house.dto';
 import { User } from './user.entity';
 import { CreateAdminUserDto, CreateAdminUserResponseDto } from './user.dto';
 
@@ -18,6 +19,9 @@ export class UserService {
   constructor(
     @InjectDataSource()
     private readonly dataSource: DataSource,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
+    private readonly houseService: HouseService,
     private readonly firebaseService: FirebaseService,
   ) {}
 
@@ -64,12 +68,15 @@ export class UserService {
     await queryRunner.startTransaction();
 
     try {
-      const house = await queryRunner.manager.save(House, {
-        name: dto.house.name,
-        imagePath: dto.house.imagePath ?? null,
-      });
+      const house = await this.houseService.create(
+        dto.house,
+        queryRunner.manager,
+      );
 
-      const user = await queryRunner.manager.save(User, {
+      const userRepository = queryRunner.manager.withRepository(
+        this.userRepository,
+      );
+      const user = await userRepository.save({
         name: dto.name,
         email: dto.email,
         firebaseUid,
@@ -119,7 +126,7 @@ export class UserService {
 
   private mapToResponseDto(
     user: User,
-    house: House,
+    house: HouseResponseDto,
   ): CreateAdminUserResponseDto {
     return {
       user: {
@@ -129,11 +136,7 @@ export class UserService {
         isAdmin: user.isAdmin,
         houseId: user.houseId,
       },
-      house: {
-        id: house.id,
-        name: house.name,
-        imagePath: house.imagePath,
-      },
+      house,
     };
   }
 }

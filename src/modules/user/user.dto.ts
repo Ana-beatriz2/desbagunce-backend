@@ -1,22 +1,12 @@
 import {
   IsEmail,
   IsNotEmpty,
-  IsOptional,
   IsString,
   MinLength,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-
-export class CreateAdminHouseDto {
-  @IsString()
-  @IsNotEmpty()
-  name: string;
-
-  @IsString()
-  @IsOptional()
-  imagePath?: string;
-}
+import { CreateHouseDto, HouseResponseDto } from '../house/house.dto';
 
 export class CreateAdminUserDto {
   @IsString()
@@ -31,8 +21,8 @@ export class CreateAdminUserDto {
   password: string;
 
   @ValidateNested()
-  @Type(() => CreateAdminHouseDto)
-  house: CreateAdminHouseDto;
+  @Type(() => CreateHouseDto)
+  house: CreateHouseDto;
 }
 
 export interface CreateAdminUserResponseDto {
@@ -43,9 +33,5 @@ export interface CreateAdminUserResponseDto {
     isAdmin: boolean;
     houseId: string;
   };
-  house: {
-    id: string;
-    name: string;
-    imagePath: string | null;
-  };
+  house: HouseResponseDto;
 }

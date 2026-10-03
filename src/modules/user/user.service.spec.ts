@@ -1,10 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { getDataSourceToken } from '@nestjs/typeorm';
+import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
 import { ConflictException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { UserService } from './user.service';
 import { FirebaseService } from '../../integrations/firebase/firebase.service';
-import { House } from '../house/house.entity';
+import { HouseService } from '../house/house.service';
 import { User } from './user.entity';
 import { CreateAdminUserDto } from './user.dto';
 
@@ -19,7 +19,7 @@ interface MockQueryRunner {
   rollbackTransaction: jest.Mock;
   release: jest.Mock;
   manager: {
-    save: jest.Mock;
+    withRepository: jest.Mock;
   };
 }
 
@@ -27,6 +27,9 @@ describe('UserService', () => {
   let service: UserService;
   let mockDataSource: jest.Mocked<DataSource>;
   let mockQueryRunner: MockQueryRunner;
+  let mockUserRepository: { save: jest.Mock };
+  let mockTransactionalUserRepository: { save: jest.Mock };
+  let mockHouseService: { create: jest.Mock };
   let mockFirebaseAuth: {
     createUser: jest.Mock;
     deleteUser: jest.Mock;
@@ -40,7 +43,16 @@ describe('UserService', () => {
     house: { name: 'Casa da Ana' },
   };
 
+  const houseResponse = {
+    id: 'house-uuid',
+    name: 'Casa da Ana',
+    imagePath: null,
+  };
+
   beforeEach(async () => {
+    mockUserRepository = { save: jest.fn() };
+    mockTransactionalUserRepository = { save: jest.fn() };
+
     mockQueryRunner = {
       connect: jest.fn(),
       startTransaction: jest.fn(),
@@ -48,13 +60,17 @@ describe('UserService', () => {
       rollbackTransaction: jest.fn(),
       release: jest.fn(),
       manager: {
-        save: jest.fn(),
+        withRepository: jest
+          .fn()
+          .mockReturnValue(mockTransactionalUserRepository),
       },
     };
 
     mockDataSource = {
       createQueryRunner: jest.fn().mockReturnValue(mockQueryRunner),
     } as unknown as jest.Mocked<DataSource>;
+
+    mockHouseService = { create: jest.fn() };
 
     mockFirebaseAuth = {
       createUser: jest.fn(),
@@ -69,6 +85,8 @@ describe('UserService', () => {
       providers: [
         UserService,
         { provide: getDataSourceToken(), useValue: mockDataSource },
+        { provide: getRepositoryToken(User), useValue: mockUserRepository },
+        { provide: HouseService, useValue: mockHouseService },
         { provide: FirebaseService, useValue: mockFirebaseService },
       ],
     }).compile();
@@ -79,19 +97,14 @@ describe('UserService', () => {
   describe('createAdminWithHouse', () => {
     it('should create the firebase account, the house, and the admin user inside a transaction', async () => {
       mockFirebaseAuth.createUser.mockResolvedValue({ uid: 'firebase-uid' });
-      mockQueryRunner.manager.save
-        .mockResolvedValueOnce({
-          id: 'house-uuid',
-          name: 'Casa da Ana',
-          imagePath: null,
-        })
-        .mockResolvedValueOnce({
-          id: 'user-uuid',
-          name: 'Ana',
-          email: 'ana@example.com',
-          isAdmin: true,
-          houseId: 'house-uuid',
-        });
+      mockHouseService.create.mockResolvedValue(houseResponse);
+      mockTransactionalUserRepository.save.mockResolvedValue({
+        id: 'user-uuid',
+        name: 'Ana',
+        email: 'ana@example.com',
+        isAdmin: true,
+        houseId: 'house-uuid',
+      });
 
       const result = await service.createAdminWithHouse(createDto);
 
@@ -100,19 +113,22 @@ describe('UserService', () => {
         password: createDto.password,
         displayName: createDto.name,
       });
-      expect(mockQueryRunner.manager.save).toHaveBeenNthCalledWith(1, House, {
-        name: 'Casa da Ana',
-        imagePath: null,
-      });
-      expect(mockQueryRunner.manager.save).toHaveBeenNthCalledWith(
-        2,
-        User,
+      // The house is created by HouseService, inside this transaction
+      expect(mockHouseService.create).toHaveBeenCalledWith(
+        createDto.house,
+        mockQueryRunner.manager,
+      );
+      expect(mockQueryRunner.manager.withRepository).toHaveBeenCalledWith(
+        mockUserRepository,
+      );
+      expect(mockTransactionalUserRepository.save).toHaveBeenCalledWith(
         expect.objectContaining({
           firebaseUid: 'firebase-uid',
           isAdmin: true,
           houseId: 'house-uuid',
         }),
       );
+      expect(mockUserRepository.save).not.toHaveBeenCalled();
       expect(mockQueryRunner.commitTransaction).toHaveBeenCalled();
       expect(mockQueryRunner.rollbackTransaction).not.toHaveBeenCalled();
       expect(mockQueryRunner.release).toHaveBeenCalled();
@@ -124,7 +140,7 @@ describe('UserService', () => {
           isAdmin: true,
           houseId: 'house-uuid',
         },
-        house: { id: 'house-uuid', name: 'Casa da Ana', imagePath: null },
+        house: houseResponse,
       });
     });
 
@@ -147,17 +163,35 @@ describe('UserService', () => {
         'email',
       );
       expect(mockQueryRunner.connect).not.toHaveBeenCalled();
+      expect(mockHouseService.create).not.toHaveBeenCalled();
     });
 
-    it('should roll back the transaction and delete the firebase account when persisting fails', async () => {
+    it('should roll back the transaction and delete the firebase account when creating the house fails', async () => {
       mockFirebaseAuth.createUser.mockResolvedValue({ uid: 'firebase-uid' });
       const dbError = new Error('db is down');
-      mockQueryRunner.manager.save.mockRejectedValue(dbError);
+      mockHouseService.create.mockRejectedValue(dbError);
 
       await expect(service.createAdminWithHouse(createDto)).rejects.toThrow(
         dbError,
       );
 
+      expect(mockTransactionalUserRepository.save).not.toHaveBeenCalled();
+      expect(mockQueryRunner.rollbackTransaction).toHaveBeenCalled();
+      expect(mockQueryRunner.release).toHaveBeenCalled();
+      expect(mockFirebaseAuth.deleteUser).toHaveBeenCalledWith('firebase-uid');
+    });
+
+    it('should roll back the transaction and delete the firebase account when saving the user fails', async () => {
+      mockFirebaseAuth.createUser.mockResolvedValue({ uid: 'firebase-uid' });
+      mockHouseService.create.mockResolvedValue(houseResponse);
+      const dbError = new Error('db is down');
+      mockTransactionalUserRepository.save.mockRejectedValue(dbError);
+
+      await expect(service.createAdminWithHouse(createDto)).rejects.toThrow(
+        dbError,
+      );
+
+      expect(mockQueryRunner.commitTransaction).not.toHaveBeenCalled();
       expect(mockQueryRunner.rollbackTransaction).toHaveBeenCalled();
       expect(mockQueryRunner.release).toHaveBeenCalled();
       expect(mockFirebaseAuth.deleteUser).toHaveBeenCalledWith('firebase-uid');
@@ -165,7 +199,8 @@ describe('UserService', () => {
 
     it('should translate a unique-constraint violation into a generic ConflictException', async () => {
       mockFirebaseAuth.createUser.mockResolvedValue({ uid: 'firebase-uid' });
-      mockQueryRunner.manager.save.mockRejectedValue({ code: '23505' });
+      mockHouseService.create.mockResolvedValue(houseResponse);
+      mockTransactionalUserRepository.save.mockRejectedValue({ code: '23505' });
 
       let error: unknown;
       try {
@@ -184,7 +219,7 @@ describe('UserService', () => {
     it('should not fail the request when the firebase rollback itself fails', async () => {
       mockFirebaseAuth.createUser.mockResolvedValue({ uid: 'firebase-uid' });
       const dbError = new Error('db is down');
-      mockQueryRunner.manager.save.mockRejectedValue(dbError);
+      mockHouseService.create.mockRejectedValue(dbError);
       mockFirebaseAuth.deleteUser.mockRejectedValue(new Error('firebase down'));
 
       await expect(service.createAdminWithHouse(createDto)).rejects.toThrow(
