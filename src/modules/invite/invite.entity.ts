@@ -2,7 +2,7 @@ import { Entity, Column, ManyToOne, JoinColumn, Index } from 'typeorm';
 import { AbstractEntity } from '../../common/entities/abstract.entity';
 import { House } from '../house/house.entity';
 import { User } from '../user/user.entity';
-import { InviteStatus } from './invite-status.enum';
+import { InviteStatus } from './invite.enums';
 
 @Entity('invites')
 export class Invite extends AbstractEntity {

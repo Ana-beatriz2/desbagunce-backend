@@ -4,6 +4,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import databaseConfig from './database/database.config';
 import { FirebaseModule } from './integrations/firebase/firebase.module';
 import { UserModule } from './modules/user/user.module';
+import { ItemModule } from './modules/item/item.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { UserModule } from './modules/user/user.module';
     }),
     FirebaseModule,
     UserModule,
+    ItemModule,
   ],
 })
 export class AppModule {}

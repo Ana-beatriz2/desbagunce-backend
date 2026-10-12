@@ -27,6 +27,10 @@ export class HouseService {
     return this.mapToResponseDto(house);
   }
 
+  async exists(houseId: string): Promise<boolean> {
+    return this.houseRepository.existsBy({ id: houseId });
+  }
+
   private mapToResponseDto(house: House): HouseResponseDto {
     return {
       id: house.id,

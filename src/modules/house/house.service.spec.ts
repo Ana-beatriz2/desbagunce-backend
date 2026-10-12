@@ -6,10 +6,10 @@ import { House } from './house.entity';
 
 describe('HouseService', () => {
   let service: HouseService;
-  let mockHouseRepository: { save: jest.Mock };
+  let mockHouseRepository: { save: jest.Mock; existsBy: jest.Mock };
 
   beforeEach(async () => {
-    mockHouseRepository = { save: jest.fn() };
+    mockHouseRepository = { save: jest.fn(), existsBy: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -79,6 +79,23 @@ describe('HouseService', () => {
       await expect(service.create({ name: 'Casa da Ana' })).rejects.toThrow(
         dbError,
       );
+    });
+  });
+
+  describe('exists', () => {
+    it('should return true when the house exists', async () => {
+      mockHouseRepository.existsBy.mockResolvedValue(true);
+
+      await expect(service.exists('house-uuid')).resolves.toBe(true);
+      expect(mockHouseRepository.existsBy).toHaveBeenCalledWith({
+        id: 'house-uuid',
+      });
+    });
+
+    it('should return false when the house does not exist', async () => {
+      mockHouseRepository.existsBy.mockResolvedValue(false);
+
+      await expect(service.exists('missing-uuid')).resolves.toBe(false);
     });
   });
 });
